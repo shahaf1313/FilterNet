@@ -20,6 +20,7 @@ class Logger:
         logger.info("FilterNet Logger created on " + creation_time)
         self.logger = logger
         self.log_folder = log_folder
+        self.name = 'log_' + creation_time
 
     def PrintAndLogArgs(self, args: arg_parser):
         args_text = '########################### FilterNet Configuration ##############################\n'

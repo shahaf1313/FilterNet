@@ -1,4 +1,4 @@
-import os.path as osp
+from torch.autograd import Variable
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -211,6 +211,7 @@ class FCN8s(nn.Module):
             return Variable(torch.zeros(1))
         predict = predict.transpose(1, 2).transpose(2, 3).contiguous()
         predict = predict[target_mask.view(n, h, w, 1).repeat(1, 1, 1, c)].view(-1, c)
+        target = target.type(torch.long)
         loss = F.cross_entropy(predict, target, weight=weight, size_average=size_average)
         return loss    
             

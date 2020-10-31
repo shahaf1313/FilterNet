@@ -32,6 +32,7 @@ def Parse():
     parser.add_argument("--save_pred_every", type=int, required=False, default=2500, help="Save summaries and checkpoint every defined steps number.")
     parser.add_argument("--print_every", type=int, required=False, default=100, help="Print loss data frequency")
     parser.add_argument("--matname", type=str, required=False, default='loss_log.mat', help=".mat file name to save loss")
+    parser.add_argument("--pic_dir", type=str, required=False, default=None, help="dir to save sample images (source, target, etc..)")
 
     return parser.parse_args()
 
