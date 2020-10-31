@@ -1,100 +1,100 @@
-# -*- coding: utf-8 -*-
-'''
-This is a PyTorch implementation of the CVPR 2020 paper:
-"Deep Local Parametric Filters for Image Enhancement": https://arxiv.org/abs/2003.13985
-
-Please cite the paper if you use this code
-
-Tested with Pytorch 0.3.1, Python 3.5
-
-Authors: Sean Moran (sean.j.moran@gmail.com), 
-         Pierre Marza (pierre.marza@gmail.com)
-
-Instructions:
-
-To get this code working on your system / problem you will need to edit the
-data loading functions, as follows:
-
-1. main.py, change the paths for the data directories to point to your data
-directory (anything with "/aiml/data")
-
-2. data.py, lines 216, 224, change the folder names of the data x and
-output directories to point to your folder names
-'''
 import model
 import arg_parser
+from data import CreateSrcDataLoader
+from data import CreateTrgDataLoader
+from backbones import CreateModel
 import os
 import os.path
 from logger import Logger
 from torch import optim
 from torch.autograd import Variable
-import torchvision.transforms as transforms
 from torch import nn
 import torch
+import numpy as np
 import time
-from data import Adobe5kDataLoader, Dataset
-
+from torch.utils.tensorboard import SummaryWriter
+IMG_MEAN = np.array((104.00698793, 116.66876762, 122.67891434), dtype=np.float32)
+IMG_MEAN = torch.reshape( torch.from_numpy(IMG_MEAN), (1,3,1,1)  )
+CS_weights = np.array( (1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+                        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0), dtype=np.float32 )
+CS_weights = torch.from_numpy(CS_weights)
 
 def main():
     args = arg_parser.Parse()
-    batch_size = args.batch_size
-    num_epoch = args.num_epoch
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus
     logger = Logger(args.log_dir)
     logger.PrintAndLogArgs(args)
 
-    training_data_loader = Adobe5kDataLoader(data_dirpath="/home/shahaf/data/GTA5",
-                                             img_ids_filepath="/home/shahaf/data_split/GTA5/train.txt")
-    training_data_dict = training_data_loader.load_data()
-    training_dataset = Dataset(data_dict=training_data_dict, transform=transforms.Compose(
-        [transforms.ToPILImage(), transforms.RandomHorizontalFlip(), transforms.RandomVerticalFlip(),
-         transforms.ToTensor()]),
-                               normaliser=2 ** 8 - 1, is_valid=False)
-
-    training_data_loader = torch.utils.data.DataLoader(training_dataset, batch_size=batch_size, shuffle=True,
-                                                       num_workers=4)
+    sourceloader, targetloader = CreateSrcDataLoader(args), CreateTrgDataLoader(args)
+    sourceloader_iter, targetloader_iter = iter(sourceloader), iter(targetloader)
 
 
-
-    net = model.DeepLPFNet()
-    net = nn.DataParallel(net.cuda())
+    domain_adapter_net = model.DeepLPFNet()
+    domain_adapter_net = nn.DataParallel(domain_adapter_net.cuda())
+    domain_adapter_optimizer = optim.Adam(
+                                            filter(lambda p: p.requires_grad, domain_adapter_net.parameters()),
+                                            lr=args.learning_rate,
+                                            betas=(0.9, 0.999),
+                                            eps=1e-08)
+    discriminator_net = model.Discriminator()
+    discriminator_net = nn.DataParallel(discriminator_net.cuda())
+    discriminator_optimizer = optim.Adam(
+                            filter(lambda p: p.requires_grad, discriminator_net.parameters()),
+                            lr=args.learning_rate,
+                            betas=(0.9, 0.999),
+                            eps=1e-08)
+    semseg_net, semseg_optimizer = CreateModel(args)
+    semseg_net = nn.DataParallel(semseg_net.cuda())
 
     logger.info('######### Network created #########')
-    logger.info('Architecture:\n' + str(net))
+    logger.info('Architecture of Domain Adapter:\n' + str(domain_adapter_net))
+    logger.info('Architecture of Discriminator:\n' + str(discriminator_net))
+    logger.info('Architecture of backbone net:\n' + str(semseg_net))
 
-    for name, param in net.named_parameters():
-        if param.requires_grad:
-            print(name)
+    # tb = SummaryWriter()
+    # tb.add_scalar("loss", loss)
 
-    criterion = None
-    optimizer = optim.Adam(filter(lambda p: p.requires_grad, net.parameters()), lr=1e-4, betas=(0.9, 0.999), eps=1e-08)
-    optimizer.zero_grad()
-    net.train()
-
-    for epoch in range(num_epoch):
-
+    for epoch in range(args.num_epochs):
+        domain_adapter_net.train()
+        discriminator_net.train()
+        semseg_net.train()
         examples = 0.0
         running_loss = 0.0
 
-        for batch_num, data in enumerate(training_data_loader, 0):
-
-            input_img_batch = Variable(data['input_img'], requires_grad=False).cuda()
-            output_img_batch = Variable(data['output_img'], requires_grad=False).cuda()
+        for batch_num in range(args.num_steps):
 
             start_time = time.time()
 
-            net_output_img_batch = net(input_img_batch)
-            net_output_img_batch = torch.clamp(net_output_img_batch, 0.0, 1.0)
+            src_img, src_lbl, src_shapes, src_names = sourceloader_iter.next()  # new batch source
+            tag_img, trg_lbl, trg_shapes, trg_names = targetloader_iter.next()  # new batch target
 
-            loss = criterion(net_output_img_batch, output_img_batch)
+            domain_adapter_optimizer.zero_grad()
+            discriminator_optimizer.zero_grad()
+            semseg_optimizer.zero_grad()
 
-            optimizer.zero_grad()
+            src_input_batch = Variable(src_img, requires_grad=False).cuda()
+            src_label_batch = Variable(src_lbl, requires_grad=False).cuda()
+            trg_input_batch =  Variable(tag_img, requires_grad=False).cuda()
+
+            src_in_trg = domain_adapter_net(src_input_batch) #G(S,T)
+            discriminator_src_in_trg = discriminator_net(src_in_trg) #D(G(S,T))
+            discriminator_trg = discriminator_net(trg_input_batch) #D(T)
+            loss_D = torch.pow(discriminator_src_in_trg, 2.) + torch.pow(1.-discriminator_trg, 2.)
+
+            src_in_trg_labels = semseg_net(src_in_trg, lbl=src_label_batch) #F(G(S.T))
+            loss_G = torch.pow(torch.dist(src_in_trg_labels, src_label_batch), 2.) + torch.pow(1.-discriminator_src_in_trg, 2.)
+
+            loss = loss_D + loss_G
+
             loss.backward()
-            optimizer.step()
 
-            running_loss += loss.data[0]
-            examples += batch_size
+            domain_adapter_optimizer.step()
+            discriminator_optimizer.step()
+            semseg_optimizer.step()
+
+            running_loss += loss.item()
+            examples += args.batch_size
 
             elapsed_time = time.time() - start_time
             logger.info("Elapsed time for batch #%d: %f secs" % (batch_num, elapsed_time))

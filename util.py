@@ -37,12 +37,9 @@ class ImageProcessing(object):
                                                                        min=0.0001) + 0.055) / 1.055) ** 2.4) * img.gt(0.04045).float()
 
         rgb_to_xyz = Variable(torch.FloatTensor([  # X        Y          Z
-                                                [0.412453, 0.212671,
-                                                    0.019334],  # R
-                                                [0.357580, 0.715160,
-                                                    0.119193],  # G
-                                                [0.180423, 0.072169,
-                                                    0.950227],  # B
+                                                [0.412453, 0.212671, 0.019334],  # R
+                                                [0.357580, 0.715160, 0.119193],  # G
+                                                [0.180423, 0.072169, 0.950227],  # B
                                                 ]), requires_grad=False).cuda()
 
         img = torch.matmul(img, rgb_to_xyz)

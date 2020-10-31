@@ -19,14 +19,19 @@ class Logger:
         logger.addHandler(ch)
         logger.info("FilterNet Logger created on " + creation_time)
         self.logger = logger
+        self.log_folder = log_folder
 
     def PrintAndLogArgs(self, args: arg_parser):
-        self.logger.info('########################### FilterNet Configuration ##############################')
+        args_text = '########################### FilterNet Configuration ##############################\n'
         for arg in vars(args):
-            print_str = arg + ": " + str(getattr(args, arg))
-            self.logger.info(print_str)
-        self.logger.info('##################################################################################')
-        self.logger.info('')
+            args_text += arg + ': ' + str(getattr(args, arg)) + '\n'
+        args_text += '##################################################################################\n'
+        self.logger.info(args_text)
+        # save to the disk
+        file_name = os.path.join(self.log_folder, 'input_params.txt')
+        with open(file_name, 'wt') as args_file:
+            args_file.write(args_text)
+            args_file.write('\n')
 
     def info(self, m):
         self.logger.info(m)

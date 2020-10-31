@@ -733,7 +733,7 @@ class DeepLPFParameterPrediction(nn.Module):
         img_fuse = torch.clamp(img_cubic * mask_scale_fuse, 0, 1)
 
         img = torch.clamp(img_fuse+img, 0, 1)
-
+        img = torch.mul(torch.sub(img, 0.5), 2)
         return img
 
 
@@ -798,6 +798,17 @@ class Discriminator(nn.Module):
                                 nn.Conv2d(base_channels, base_channels, kernel_size=4, stride=2, padding=1),
                                 nn.Tanh()
         )
+        self.l6 = nn.Sequential(
+                                nn.Linear(in_features= 2**15, out_features=2**10),
+                                # nn.BatchNorm1d(2**10),
+                                nn.LeakyReLU()
+        )
+        self.l7 = nn.Sequential(
+            nn.Linear(in_features=2**10, out_features=2**6),
+            # nn.BatchNorm1d(2**6),
+            nn.LeakyReLU()
+        )
+
 
     def forward(self, x):
         x0 = self.l0(x)
@@ -805,6 +816,8 @@ class Discriminator(nn.Module):
         x2 = self.l2(x1)
         x3 = self.l3(x2)
         x4 = self.l4(x3)
-        x5 = self.l5(x4)
+        x5 = self.l5(x4).view(x.shape[0], -1)
+        x6 = self.l6(x5)
+        x7 = self.l7(x6)
 
-        return torch.mean(x5)
+        return torch.mean(x7)
