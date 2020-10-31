@@ -16,6 +16,7 @@ import time
 import scipy.io as sio
 from torch.utils.tensorboard import SummaryWriter
 IMG_MEAN = np.array((104.00698793, 116.66876762, 122.67891434), dtype=np.float32)
+IMG_PIXELS_NUM = 512*1024*3
 IMG_MEAN = torch.reshape( torch.from_numpy(IMG_MEAN), (1,3,1,1)  )
 CS_weights = np.array( (1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
                         1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0), dtype=np.float32 )
@@ -96,10 +97,11 @@ def main():
 
             src_in_trg_labels = semseg_net(src_in_trg, lbl=src_label_batch) #F(G(S.T))
             src_in_trg_labels = torch.argmax(src_in_trg_labels, dim=1)
-            loss_G = torch.pow(torch.dist(src_in_trg_labels, src_label_batch), 2.) + torch.pow(1.-discriminator_src_in_trg, 2.)
+            loss_G = eps*torch.div(torch.pow(torch.dist(src_in_trg_labels, src_label_batch), 2.), IMG_PIXELS_NUM) +\
+                     torch.pow(1.-discriminator_src_in_trg, 2.)
 
             #todo: check with Shady if I need to add the FCN loss also!
-            loss = eps * (loss_D + loss_G) #+ semseg_net.FCN8s.loss_seg
+            loss = loss_D + loss_G #+ semseg_net.FCN8s.loss_seg
             loss = torch.mean(loss)
             loss.backward()
 
