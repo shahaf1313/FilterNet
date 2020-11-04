@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import numpy as np
 
 class FCN8s(nn.Module):
-    def __init__(self, num_classes=21):
+    def __init__(self, num_classes=19):
         super(FCN8s, self).__init__()
         # conv1
         self.conv1_1 = nn.Conv2d(3, 64, 3, padding=100)
@@ -68,6 +68,9 @@ class FCN8s(nn.Module):
             num_classes, num_classes, 16, stride=8, bias=False)
         self.upscore_pool4 = nn.ConvTranspose2d(
             num_classes, num_classes, 4, stride=2, bias=False)
+
+        self.loss_seg = None
+        self.loss_ent = None
 
         self._initialize_weights()
         
@@ -153,7 +156,7 @@ class FCN8s(nn.Module):
 
         h = self.upscore8(h)
         h = h[:, :, 31:31 + x.size()[2], 31:31 + x.size()[3]].contiguous()
-        
+
         if lbl is not None:
             P = F.softmax(h, dim=1)        # [B, 19, H, W]
             logP = F.log_softmax(h, dim=1) # [B, 19, H, W]
@@ -164,7 +167,8 @@ class FCN8s(nn.Module):
             ent = ent ** 2.0 + 1e-8
             ent = ent ** ita
             self.loss_ent = ent.mean()
-            self.loss_seg = self.CrossEntropy2d(h, lbl, weight=weight)         
+            self.loss_seg = self.CrossEntropy2d(h, lbl, weight=weight)
+            return h, self.loss_seg, self.loss_ent
 
         return h
     
@@ -193,9 +197,9 @@ class FCN8s(nn.Module):
                 raise ValueError('Unexpected module: %s' % str(m))
             
     def adjust_learning_rate(self, args, optimizer, i):
-        optimizer.param_groups[0]['lr'] = args.learning_rate * (0.1**(int(i/50000)))
+        optimizer.param_groups[0]['lr'] = args.generator_lr * (0.1**(int(i/50000)))
         if len(optimizer.param_groups) > 1:
-            optimizer.param_groups[1]['lr'] = args.learning_rate * (0.1**(int(i/50000))) * 2 
+            optimizer.param_groups[1]['lr'] = args.generator_lr * (0.1**(int(i/50000))) * 2
             
     def CrossEntropy2d(self, predict, target, weight=None, size_average=True):
         assert not target.requires_grad
@@ -215,7 +219,7 @@ class FCN8s(nn.Module):
         loss = F.cross_entropy(predict, target, weight=weight, size_average=size_average)
         return loss    
             
-def VGG16_FCN8s(num_classes=21, init_weights=None, restore_from=None):
+def VGG16_FCN8s(num_classes=19, init_weights=None, restore_from=None):
     model = FCN8s(num_classes=num_classes)
     if init_weights is not None:
         model.load_state_dict(torch.load(init_weights, map_location=lambda storage, loc: storage)) 

@@ -796,7 +796,8 @@ class Discriminator(nn.Module):
         )
         self.l5 = nn.Sequential(
                                 nn.Conv2d(base_channels, base_channels, kernel_size=4, stride=2, padding=1),
-                                nn.Tanh()
+                                nn.BatchNorm2d(base_channels),
+                                nn.LeakyReLU()
         )
         self.l6 = nn.Sequential(
                                 nn.Linear(in_features= 2**15, out_features=2**10),
@@ -804,9 +805,9 @@ class Discriminator(nn.Module):
                                 nn.LeakyReLU()
         )
         self.l7 = nn.Sequential(
-            nn.Linear(in_features=2**10, out_features=2**6),
-            # nn.BatchNorm1d(2**6),
-            nn.LeakyReLU()
+                                nn.Linear(in_features=2**10, out_features=2**6),
+                                # nn.BatchNorm1d(2**6),
+                                nn.Sigmoid()
         )
 
 
@@ -821,3 +822,46 @@ class Discriminator(nn.Module):
         x7 = self.l7(x6)
 
         return torch.mean(x7)
+
+class DiscriminatorLoss(nn.Module):
+    def __init__(self):
+        """
+        Discriminator loss. Expects to receive scalar input.
+        """
+        super(DiscriminatorLoss, self).__init__()
+
+    def forward(self, source_value, target_value):
+        assert source_value.shape == target_value.shape
+        assert len(source_value.shape) == 1
+        self.cache = source_value, target_value, target_value.shape[0]
+        return torch.mean(source_value**2 + (1-target_value)**2)
+
+    # def backward(self, grad_output):
+    #     #todo: WHY IT DOES NOT ENTERS HERE????? Noticed that when I was debugging
+    #     src, trg, N = self.cache
+    #     ds = 2*src*grad_output/N
+    #     dt = -2*(1-trg)*grad_output/N
+    #     return ds, dt
+
+class GeneratorLoss(nn.Module):
+    def __init__(self):
+        """
+        Generator loss. Expects to predicated
+        """
+        super(GeneratorLoss, self).__init__()
+        self.mse_loss = torch.nn.MSELoss()
+
+    # def forward(self, predicated, label, discriminator_target):
+    def forward(self, loss_sem, discriminator_target):
+        # assert predicated.shape == label.shape
+        # assert len(discriminator_target.shape) == 1
+        self.cache = discriminator_target, discriminator_target.shape[0]
+        # return self.mse_loss(predicated, label) + torch.mean((1-discriminator_target)**2)
+        #todo: check with shady that this loss (celoss) is better than MSEloss, as he suggested.
+        return torch.mean(loss_sem +(1-discriminator_target)**2)
+
+    # def backward(self, grad_output):
+    #     discriminator_target, N = self.cache
+    #     dt = -2*(1-discriminator_target)*grad_output/N
+    #     #todo: check if we need to return somehow self.mseloss grads from here, or that (like I assumed) torch handels it by itself..?
+    #     return None, None, dt

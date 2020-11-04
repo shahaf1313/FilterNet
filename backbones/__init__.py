@@ -12,7 +12,7 @@ def CreateModel(args):
 
         if args.set == 'train' or args.set == 'trainval':
             optimizer = optim.SGD(model.optim_parameters(args),
-                                  lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
+                                  lr=args.generator_lr, momentum=args.momentum, weight_decay=args.weight_decay)
             optimizer.zero_grad()
             return model, optimizer
         else:
@@ -25,9 +25,9 @@ def CreateModel(args):
             [
                 {'params': model.get_parameters(bias=False)},
                 {'params': model.get_parameters(bias=True),
-                 'lr': args.learning_rate * 2}
+                 'lr': args.generator_lr * 2}
             ],
-            lr=args.learning_rate,
+            lr=args.generator_lr,
             betas=(0.9, 0.99))
             optimizer.zero_grad()
             return model, optimizer

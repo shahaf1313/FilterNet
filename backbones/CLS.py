@@ -68,10 +68,10 @@ class Classifier(nn.Module):
                 yield i
 
     def optim_parameters(self, args):
-        return [{'params': self.get_lr_params(), 'lr': args.learning_rate}]
+        return [{'params': self.get_lr_params(), 'lr': args.generator_lr}]
 
     def adjust_learning_rate(self, args, optimizer, i):
-        lr = args.learning_rate * (  (1-float(i)/args.num_steps) ** (args.power)  )
+        lr = args.generator_lr * (  (1-float(i)/args.num_steps) ** (args.power)  )
         optimizer.param_groups[0]['lr'] = lr
         if len(optimizer.param_groups) > 1:
             optimizer.param_groups[1]['lr'] = lr * 10  
