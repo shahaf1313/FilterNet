@@ -52,9 +52,9 @@ class GTA5DataSet(data.Dataset):
             label_copy[label == k] = v
 
         size = image.shape
-        image = image[:, :, ::-1]  # change to BGR
+        # image = image[:, :, ::-1]  # change to BGR
         image -= self.mean
         image = image.transpose((2, 0, 1))
-
+        image = (image - 128.) / 128  # change from 0..255 to -1..1
         return image.copy(), label_copy.copy(), np.array(size), name
 

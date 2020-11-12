@@ -1,44 +1,42 @@
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
-import numpy as np
-
 affine_par = True
-
-def conv3x3( in_planes, out_planes, stride=1 ):
-    "3x3 convolution with padding"
-    return nn.Conv2d( in_planes, out_planes, kernel_size=3, stride=stride,
-                      padding=1, bias=False )
-
-class BasicBlock(nn.Module):
-    expansion = 1
-    def __init__(self, inplanes, planes, stride=1, downsample=None):
-        super(BasicBlock, self).__init__()
-        self.conv1 = conv3x3(inplanes, planes, stride)
-        self.bn1 = nn.BatchNorm2d(planes, affine=affine_par)
-        self.relu = nn.ReLU(inplace=True)
-        self.conv2 = conv3x3(planes, planes)
-        self.bn2 = nn.BatchNorm2d(planes, affine=affine_par)
-        self.downsample = downsample
-        self.stride = stride
-
-    def forward(self, x):
-        residual = x
-
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu(out)
-
-        out = self.conv2(out)
-        out = self.bn2(out)
-
-        if self.downsample is not None:
-            residual = self.downsample(x)
-
-        out += residual
-        out = self.relu(out)
-
-        return out
+#
+# def conv3x3( in_planes, out_planes, stride=1 ):
+#     "3x3 convolution with padding"
+#     return nn.Conv2d( in_planes, out_planes, kernel_size=3, stride=stride,
+#                       padding=1, bias=False )
+#
+# class BasicBlock(nn.Module):
+#     expansion = 1
+#     def __init__(self, inplanes, planes, stride=1, downsample=None):
+#         super(BasicBlock, self).__init__()
+#         self.conv1 = conv3x3(inplanes, planes, stride)
+#         self.bn1 = nn.BatchNorm2d(planes, affine=affine_par)
+#         self.relu = nn.ReLU(inplace=True)
+#         self.conv2 = conv3x3(planes, planes)
+#         self.bn2 = nn.BatchNorm2d(planes, affine=affine_par)
+#         self.downsample = downsample
+#         self.stride = stride
+#
+#     def forward(self, x):
+#         residual = x
+#
+#         out = self.conv1(x)
+#         out = self.bn1(out)
+#         out = self.relu(out)
+#
+#         out = self.conv2(out)
+#         out = self.bn2(out)
+#
+#         if self.downsample is not None:
+#             residual = self.downsample(x)
+#
+#         out += residual
+#         out = self.relu(out)
+#
+#         return out
 
 class Bottleneck(nn.Module):
     expansion = 4
@@ -179,6 +177,7 @@ class ResNet101(nn.Module):
             x = nn.functional.interpolate(x, size=(h, w), mode='bilinear', align_corners=True)
             if lbl is not None:
                 self.loss_seg = self.CrossEntropy2d(x, lbl, weight=weight)
+            return x, self.loss_seg, self.loss_ent
 
         return x
 
@@ -211,8 +210,8 @@ class ResNet101(nn.Module):
                 yield i
 
     def optim_parameters(self, args):
-        return [{'params': self.get_1x_lr_params_NOscale(), 'lr': args.learning_rate},
-                {'params': self.get_10x_lr_params(), 'lr': 10 * args.learning_rate}]
+        return [{'params': self.get_1x_lr_params_NOscale(), 'lr': args.generator_lr},
+                {'params': self.get_10x_lr_params(), 'lr': 10 * args.generator_lr}]
 
     def adjust_learning_rate(self, args, optimizer, i):
         lr = args.learning_rate * (  (1-float(i)/args.num_steps) ** (args.power)  )
@@ -235,7 +234,7 @@ class ResNet101(nn.Module):
             return Variable(torch.zeros(1))
         predict = predict.transpose(1, 2).transpose(2, 3).contiguous()
         predict = predict[target_mask.view(n, h, w, 1).repeat(1, 1, 1, c)].view(-1, c)
-
+        target = target.type(torch.long)
         loss = F.cross_entropy(predict, target, weight=weight, size_average=size_average)
 
         return loss    

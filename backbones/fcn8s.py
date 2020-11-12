@@ -69,9 +69,6 @@ class FCN8s(nn.Module):
         self.upscore_pool4 = nn.ConvTranspose2d(
             num_classes, num_classes, 4, stride=2, bias=False)
 
-        self.loss_seg = None
-        self.loss_ent = None
-
         self._initialize_weights()
         
     def _initialize_weights(self):
@@ -166,9 +163,9 @@ class FCN8s(nn.Module):
             # compute robust entropy
             ent = ent ** 2.0 + 1e-8
             ent = ent ** ita
-            self.loss_ent = ent.mean()
-            self.loss_seg = self.CrossEntropy2d(h, lbl, weight=weight)
-            return h, self.loss_seg, self.loss_ent
+            loss_ent = ent.mean()
+            loss_seg = self.CrossEntropy2d(h, lbl, weight=weight)
+            return h, loss_seg, loss_ent
 
         return h
     

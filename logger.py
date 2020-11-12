@@ -34,5 +34,13 @@ class Logger:
             args_file.write(args_text)
             args_file.write('\n')
 
+    def PrintAndLogData(self, saver, epoch, batch_num, print_every):
+        print_discriminator_loss = saver.running_loss_discriminator / print_every
+        print_generator_loss = saver.running_loss_generator / print_every
+        print_time = saver.running_time / print_every
+        self.logger.info('[ep %d][it %d][loss discriminator %.8f][loss generator %.8f][time per batch %.2fs]' % \
+                    (epoch + 1, batch_num + 1, print_discriminator_loss, print_generator_loss, print_time))
+        saver.running_loss_discriminator, saver.running_loss_generator, saver.running_time = 0.0, 0.0, 0.0
+
     def info(self, m):
         self.logger.info(m)

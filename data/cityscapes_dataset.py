@@ -31,6 +31,6 @@ class cityscapesDataSet(data.Dataset):
         image = image[:, :, ::-1]  # change to BGR
         image -= self.mean
         image = image.transpose((2, 0, 1))
-
+        image = (image - 128.) / 128  # change from 0..255 to -1..1
         return image.copy(), np.array(size), name
 

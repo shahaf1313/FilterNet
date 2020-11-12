@@ -35,7 +35,7 @@ class BinaryLayer(nn.Module):
 
 class CubicFilter(nn.Module):
 
-    def __init__(self, num_in_channels=64, num_out_channels=64):
+    def __init__(self, num_in_channels=67, num_out_channels=64):
         """Initialisation function
 
         :param block: a block (layer) of the neural network
@@ -142,7 +142,7 @@ class CubicFilter(nn.Module):
 
 class GraduatedFilter(nn.Module):
 
-    def __init__(self, num_in_channels=64, num_out_channels=64):
+    def __init__(self, num_in_channels=67, num_out_channels=64):
         """Initialisation function for the graduated filter
 
         :param num_in_channels:  x channels
@@ -359,7 +359,7 @@ class GraduatedFilter(nn.Module):
 
 class EllipticalFilter(nn.Module):
 
-    def __init__(self, num_in_channels=64, num_out_channels=64):
+    def __init__(self, num_in_channels=67, num_out_channels=64):
         """Initialisation function
 
         :param block: a block (layer) of the neural network
@@ -703,65 +703,33 @@ class DeepLPFParameterPrediction(nn.Module):
         self.graduated_filter = GraduatedFilter()
         self.elliptical_filter = EllipticalFilter()
 
-    def forward(self, x):
-        """DeepLPF combined architecture fusing cubic, graduated and elliptical filters
-
-        :param x: forward the data Tensor x through the network
-        :returns: Tensor representing the predicted image batch of shape BxCxWxH
-        :rtype: Tensor
-
-        """
-        x.contiguous()  # remove memory holes
-        x.cuda()
-
-        feat = x[:, 3:64, :, :]
-        img = x[:, 0:3, :, :]
-
+    def forward(self, src_img, trg_feat):
+        trg_feat.contiguous()  # remove memory holes
         torch.cuda.empty_cache()
-        shape = x.shape
 
-        img_clamped = torch.clamp(img, 0, 1)
+        cubic_filter = self.cubic_filter.get_cubic_mask(trg_feat, src_img)
+        mask_scale_graduated = self.graduated_filter.get_graduated_mask(trg_feat, src_img)
+        mask_scale_elliptical = self.elliptical_filter.get_elliptical_mask(trg_feat, src_img)
 
-        img_cubic = self.cubic_filter.get_cubic_mask(feat, img)
-        mask_scale_graduated = self.graduated_filter.get_graduated_mask(
-            feat, img)
-        mask_scale_elliptical = self.elliptical_filter.get_elliptical_mask(
-            feat, img)
-
-        mask_scale_fuse = torch.clamp(
-            mask_scale_graduated+mask_scale_elliptical, 0, 2)
-        img_fuse = torch.clamp(img_cubic * mask_scale_fuse, 0, 1)
-
-        img = torch.clamp(img_fuse+img, 0, 1)
-        img = torch.mul(torch.sub(img, 0.5), 2)
-        return img
+        # mask_scale_fuse = torch.clamp(mask_scale_graduated+mask_scale_elliptical, 0, 2)
+        # img_fuse = torch.clamp(cubic_filter * mask_scale_fuse, 0, 1)
+        mask_scale_fuse = mask_scale_graduated+mask_scale_elliptical
+        img_fuse = cubic_filter * mask_scale_fuse
+        src_in_trg = torch.tanh(src_img + img_fuse)
+        return src_in_trg
 
 
 class DeepLPFNet(nn.Module):
 
     def __init__(self):
-        """Initialisation function
-
-        :returns: initialises parameters of the neural networ
-        :rtype: N/A
-
-        """
         super(DeepLPFNet, self).__init__()
         self.backbonenet = unet.UNetModel()
         self.deeplpfnet = DeepLPFParameterPrediction()
 
-    def forward(self, img):
-        """Neural network forward function
-
-        :param img: forward the data img through the network
-        :returns: residual image
-        :rtype: numpy ndarray
-
-        """
-        feat = self.backbonenet(img)
-        img = self.deeplpfnet(feat)
-
-        return img
+    def forward(self, src_img, trg_img):
+        trg_feat = self.backbonenet(trg_img)
+        src_in_trg = self.deeplpfnet(src_img, trg_feat)
+        return src_in_trg
 
 
 
@@ -836,13 +804,6 @@ class DiscriminatorLoss(nn.Module):
         self.cache = source_value, target_value, target_value.shape[0]
         return torch.mean(source_value**2 + (1-target_value)**2)
 
-    # def backward(self, grad_output):
-    #     #todo: WHY IT DOES NOT ENTERS HERE????? Noticed that when I was debugging
-    #     src, trg, N = self.cache
-    #     ds = 2*src*grad_output/N
-    #     dt = -2*(1-trg)*grad_output/N
-    #     return ds, dt
-
 class GeneratorLoss(nn.Module):
     def __init__(self):
         """
@@ -851,17 +812,5 @@ class GeneratorLoss(nn.Module):
         super(GeneratorLoss, self).__init__()
         self.mse_loss = torch.nn.MSELoss()
 
-    # def forward(self, predicated, label, discriminator_target):
-    def forward(self, loss_sem, discriminator_target):
-        # assert predicated.shape == label.shape
-        # assert len(discriminator_target.shape) == 1
-        self.cache = discriminator_target, discriminator_target.shape[0]
-        # return self.mse_loss(predicated, label) + torch.mean((1-discriminator_target)**2)
-        #todo: check with shady that this loss (celoss) is better than MSEloss, as he suggested.
-        return torch.mean(loss_sem +(1-discriminator_target)**2)
-
-    # def backward(self, grad_output):
-    #     discriminator_target, N = self.cache
-    #     dt = -2*(1-discriminator_target)*grad_output/N
-    #     #todo: check if we need to return somehow self.mseloss grads from here, or that (like I assumed) torch handels it by itself..?
-    #     return None, None, dt
+    def forward(self, loss_seg, loss_ent, entW, discriminator_target):
+        return torch.mean(loss_seg + entW*loss_ent + (1-discriminator_target)**2)

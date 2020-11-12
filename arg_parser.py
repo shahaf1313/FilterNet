@@ -14,8 +14,12 @@ def Parse():
     parser.add_argument("--discriminator_lr", type=float, default=1e-5, help="Initial learning rate for the discriminator network")
     parser.add_argument("--momentum", type=float, default=0.9, help="Momentum component of the optimiser.")
     parser.add_argument("--power", type=float, default=0.9, help="Decay parameter to compute the learning rate (only for deeplab).")
-    parser.add_argument("--discriminator_iters", type=int, default=3, help="Number of iterations to teach discriminator before switching to generator.")
-    parser.add_argument("--generator_iters", type=int, default=10, help="Number of iterations to teach generator before switching to discriminator.")
+    parser.add_argument("--entW", type=float, default=0.01, help="weight for entropy")
+    parser.add_argument("--ita", type=float, default=2.0, help="ita for robust entropy")
+    parser.add_argument("--discriminator_iters", type=int, default=10, help="Number of iterations to teach discriminator before switching to generator.")
+    parser.add_argument("--generator_iters", type=int, default=300, help="Number of iterations to teach generator before switching to discriminator.")
+    parser.add_argument("--generator_boost", type=int, default=200, help="Number of iterations to BOOST generator before training to discriminator.")
+    parser.add_argument("--weight-decay", type=float, default=0.0005, help="Regularisation parameter for L2-loss.")
 
     #Data and sanpshots:
     parser.add_argument("--model", type=str, required=False, default='DeepLab', help="available options : DeepLab and VGG")
@@ -33,10 +37,9 @@ def Parse():
     parser.add_argument("--num_classes", type=int, required=False, default=19, help="Number of classes for cityscapes.")
     parser.add_argument("--init_weights", type=str, required=False, default=None, help="initial model.")
     parser.add_argument("--restore_from", type=str, required=False, default=None, help="Where restore model parameters from.")
-    parser.add_argument("--save_pred_every", type=int, required=False, default=2500, help="Save summaries and checkpoint every defined steps number.")
+    parser.add_argument("--save_pics_every", type=int, required=False, default=2500, help="Save pictures of source and target.")
+    parser.add_argument("--save_checkpoint", type=int, required=False, default=2500, help="Save summaries and checkpoint every defined steps number.")
     parser.add_argument("--print_every", type=int, required=False, default=100, help="Print loss data frequency")
-    parser.add_argument("--matname", type=str, required=False, default='loss_log.mat', help=".mat file name to save loss")
-    parser.add_argument("--pic_dir", type=str, required=False, default=None, help="dir to save sample images (source, target, etc..)")
 
     return parser.parse_args()
 
