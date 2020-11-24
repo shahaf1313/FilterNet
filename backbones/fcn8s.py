@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from constants import IGNORE_LABEL, NUM_CLASSES
 
 class FCN8s(nn.Module):
     def __init__(self, num_classes=19):
@@ -206,7 +207,7 @@ class FCN8s(nn.Module):
         assert predict.size(2) == target.size(1), "{0} vs {1} ".format(predict.size(2), target.size(1))
         assert predict.size(3) == target.size(2), "{0} vs {1} ".format(predict.size(3), target.size(3))
         n, c, h, w = predict.size()
-        target_mask = (target >= 0) * (target != 255)
+        target_mask = (target >= 0) * (target != IGNORE_LABEL)
         target = target[target_mask]
         if not target.data.dim():
             return Variable(torch.zeros(1))
@@ -216,12 +217,8 @@ class FCN8s(nn.Module):
         loss = F.cross_entropy(predict, target, weight=weight, size_average=size_average)
         return loss    
             
-def VGG16_FCN8s(num_classes=19, init_weights=None, restore_from=None):
+def VGG16_FCN8s(num_classes=NUM_CLASSES):
     model = FCN8s(num_classes=num_classes)
-    if init_weights is not None:
-        model.load_state_dict(torch.load(init_weights, map_location=lambda storage, loc: storage)) 
-    if restore_from is not None:
-        model.load_state_dict(torch.load(restore_from + '.pth', map_location=lambda storage, loc: storage))   
     return model
 
 

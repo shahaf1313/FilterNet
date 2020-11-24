@@ -1,24 +1,17 @@
-import numpy as np
+from constants import IMG_MEAN, image_sizes, cs_size_test
 from torch.utils import data
 from data.gta5_dataset import GTA5DataSet
 from data.cityscapes_dataset import cityscapesDataSet
 from data.cityscapes_dataset_label import cityscapesDataSetLabel
-from data.cityscapes_dataset_SSL import cityscapesDataSetSSL
 from data.synthia_dataset import SYNDataSet
-
-IMG_MEAN = np.array((0.0, 0.0, 0.0), dtype=np.float32)
-image_sizes = {'cityscapes': (1024,512), 'gta5': (1280, 720), 'synthia': (1280, 760)}
-cs_size_test = {'cityscapes': (1344,576)}
 
 def CreateSrcDataLoader(args):
     if args.source == 'gta5':
         source_dataset = GTA5DataSet( args.data_dir, args.data_list, crop_size=image_sizes['cityscapes'], 
-                                      resize=image_sizes['gta5'] ,mean=IMG_MEAN,
-                                      max_iters=args.num_steps * args.batch_size )
+                                      resize=image_sizes['gta5'] ,mean=IMG_MEAN )
     elif args.source == 'synthia':
         source_dataset = SYNDataSet( args.data_dir, args.data_list, crop_size=image_sizes['cityscapes'],
-                                      resize=image_sizes['synthia'] ,mean=IMG_MEAN,
-                                      max_iters=args.num_steps * args.batch_size )
+                                      resize=image_sizes['synthia'] ,mean=IMG_MEAN )
     else:
         raise ValueError('The source dataset mush be either gta5 or synthia')
     
@@ -29,69 +22,35 @@ def CreateSrcDataLoader(args):
                                          pin_memory=True )    
     return source_dataloader
 
-def CreateTrgDataLoader(args):
-    if args.set == 'train' or args.set == 'trainval':
+def CreateTrgDataLoader(args, mode='train'):
+    if mode == 'train':
         target_dataset = cityscapesDataSetLabel( args.data_dir_target, 
-                                                 args.data_list_target, 
+                                                 args.data_list_target_train,
                                                  crop_size=image_sizes['cityscapes'], 
-                                                 mean=IMG_MEAN, 
-                                                 max_iters=args.num_steps * args.batch_size, 
-                                                 set=args.set )
-    elif args.set == 'eval':
-        target_dataset = cityscapesDataSet( args.data_dir_target,
-                                            args.data_list_target,
-                                            crop_size=cs_size_test['cityscapes'],
-                                            mean=IMG_MEAN,
-                                            set=args.set )
+                                                 mean=IMG_MEAN,
+                                                 set=mode)
+    elif mode == 'val':
+        target_dataset = cityscapesDataSetLabel( args.data_dir_target,
+                                                 args.data_list_target_val,
+                                                 crop_size=cs_size_test['cityscapes'],
+                                                 mean=IMG_MEAN,
+                                                 set=mode)
     else:
-        raise Exception("Argument set has not entered properly. Options are train, trainval or eval.")
+        raise Exception("Argument set has not entered properly. Options are train or eval.")
 
-    if args.set == 'train' or args.set == 'trainval':
+    if mode == 'train':
         target_dataloader = data.DataLoader( target_dataset,
                                              batch_size=args.batch_size,
                                              shuffle=True,
                                              num_workers=args.num_workers,
                                              pin_memory=True )
-    elif args.set == 'eval':
+    elif mode == 'val':
         target_dataloader = data.DataLoader( target_dataset,
-                                             batch_size=1, 
-                                             shuffle=False, 
+                                             batch_size=args.batch_size,
+                                             shuffle=False,
+                                             num_workers=args.num_workers,
                                              pin_memory=True )
     else:
-        raise Exception("Argument set has not entered properly. Options are train, trainval or eval.")
+        raise Exception("Argument set has not entered properly. Options are train or eval.")
 
     return target_dataloader
-
-
-
-def CreateTrgDataSSLLoader(args):
-    target_dataset = cityscapesDataSet( args.data_dir_target, 
-                                        args.data_list_target,
-                                        crop_size=image_sizes['cityscapes'],
-                                        mean=IMG_MEAN, 
-                                        set=args.set )
-    target_dataloader = data.DataLoader( target_dataset, 
-                                         batch_size=1, 
-                                         shuffle=False, 
-                                         pin_memory=True )
-    return target_dataloader
-
-
-
-def CreatePseudoTrgLoader(args):
-    target_dataset = cityscapesDataSetSSL( args.data_dir_target,
-                                           args.data_list_target,
-                                           crop_size=image_sizes['cityscapes'],
-                                           mean=IMG_MEAN,
-                                           max_iters=args.num_steps * args.batch_size,
-                                           set=args.set,
-                                           label_folder=args.label_folder )
-
-    target_dataloader = data.DataLoader( target_dataset,
-                                         batch_size=args.batch_size,
-                                         shuffle=True,
-                                         num_workers=args.num_workers,
-                                         pin_memory=True )
-
-    return target_dataloader
-

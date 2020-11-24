@@ -1,6 +1,7 @@
 import model
 import arg_parser
-from utils import *
+from constants import NUM_CLASSES, IGNORE_LABEL
+from utils import ImageAndLossSaver, compute_cm_batch_torch, compute_iou_torch
 from data import CreateSrcDataLoader
 from data import CreateTrgDataLoader
 from backbones import CreateModel
@@ -13,10 +14,6 @@ import torch
 import numpy as np
 import time
 from torch.utils.tensorboard import SummaryWriter
-
-IMG_MEAN = np.array((104.00698793, 116.66876762, 122.67891434), dtype=np.float32)
-IMG_PIXELS_NUM = 512*1024*3
-IMG_MEAN = torch.reshape( torch.from_numpy(IMG_MEAN), (1,3,1,1)  )
 # torch.manual_seed(0)
 # torch.cuda.manual_seed(0)
 # torch.backends.cudnn.enabled = True
@@ -32,10 +29,12 @@ def main():
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus
     logger = Logger(args.log_dir)
     logger.PrintAndLogArgs(args)
-    saver = ImageAndLossSaver(SummaryWriter(), logger.log_folder, args.save_pics_every)
-
-    sourceloader, targetloader = CreateSrcDataLoader(args), CreateTrgDataLoader(args)
-
+    saver = ImageAndLossSaver(SummaryWriter(), logger.log_folder, args.checkpoints_dir, args.save_pics_every)
+    source_loader, target_train_loader, target_eval_loader = CreateSrcDataLoader(args), CreateTrgDataLoader(args, 'train'), CreateTrgDataLoader(args, 'val')
+    epoch_size = np.maximum(len(target_train_loader.dataset), len(source_loader.dataset))
+    steps_per_epoch = int(np.floor(epoch_size / args.batch_size))
+    source_loader.dataset.SetEpochSize(epoch_size)
+    target_train_loader.dataset.SetEpochSize(epoch_size)
 
     generator = model.DeepLPFNet()
     generator = nn.DataParallel(generator.cuda())
@@ -64,15 +63,18 @@ def main():
         discriminator.train()
         semseg_net.train()
         saver.Reset()
-        sourceloader_iter, targetloader_iter = iter(sourceloader), iter(targetloader)
+        discriminate_src = True
+        source_loader_iter, target_train_loader_iter, target_eval_loader_iter = iter(source_loader), iter(target_train_loader), iter(target_eval_loader)
         logger.info('#################[Epoch %d]#################' % (epoch + 1))
 
-        for batch_num in range(args.num_steps):
+        for batch_num in range(steps_per_epoch):
+            if batch_num > 10:
+                break
             start_time = time.time()
             training_discriminator = (batch_num >= args.generator_boost) and (batch_num-args.generator_boost) % (args.discriminator_iters + args.generator_iters) < args.discriminator_iters
             #todo: should I substract the mean image?? from source? from data?? -> try and find out!
-            src_img, src_lbl, src_shapes, src_names = sourceloader_iter.next()  # new batch source
-            trg_img, trg_lbl, trg_shapes, trg_names = targetloader_iter.next()  # new batch target
+            src_img, src_lbl, src_shapes, src_names = source_loader_iter.next()  # new batch source
+            trg_eval_img, trg_eval_lbl, trg_shapes, trg_names = target_train_loader_iter.next()  # new batch target
 
             generator_optimizer.zero_grad()
             discriminator_optimizer.zero_grad()
@@ -80,18 +82,21 @@ def main():
 
             src_input_batch = Variable(src_img, requires_grad=False).cuda()
             src_label_batch = Variable(src_lbl, requires_grad=False).cuda()
-            trg_input_batch = Variable(trg_img, requires_grad=False).cuda()
+            trg_input_batch = Variable(trg_eval_img, requires_grad=False).cuda()
             # trg_label_batch = Variable(trg_lbl, requires_grad=False).cuda()
-
             src_in_trg = generator(src_input_batch, trg_input_batch)  # G(S,T)
-            discriminator_src_in_trg = discriminator(src_in_trg)  # D(G(S,T))
-            discriminator_trg = discriminator(trg_input_batch)  # D(T)
-
 
             if training_discriminator: #train discriminator
+                if discriminate_src == True:
+                    discriminator_src_in_trg = discriminator(src_in_trg)  # D(G(S,T))
+                    discriminator_trg = None  # D(T)
+                else:
+                    discriminator_src_in_trg = None  # D(G(S,T))
+                    discriminator_trg = discriminator(trg_input_batch)  # D(T)
+                discriminate_src = not discriminate_src
                 loss = discriminator_criterion(discriminator_src_in_trg, discriminator_trg)
             else: #train generator and semseg net
-                #todo: check if losses are conncted to the computational graph! seems they don't...
+                discriminator_trg = discriminator(trg_input_batch)  # D(T)
                 predicted, loss_seg, loss_ent = semseg_net(src_in_trg, lbl=src_label_batch)  # F(G(S.T))
                 src_in_trg_labels = torch.argmax(predicted, dim=1)
                 loss = generator_criterion(loss_seg, loss_ent, args.entW, discriminator_trg)
@@ -107,24 +112,44 @@ def main():
 
             saver.running_time += time.time() - start_time
 
-            if (not training_discriminator) and saver.SaveIteration:
-                saver.SaveImages(epoch, batch_num,
-                             src_img[0, :, :, :],
-                             src_in_trg[0, :, :, :],
-                             src_lbl[0, :, :],
-                             src_in_trg_labels[0, :, :])
+            if (not training_discriminator) and saver.SaveImagesIteration:
+                saver.SaveTrainImages(epoch,
+                                      batch_num,
+                                      src_img[0, :, :, :],
+                                      src_in_trg[0, :, :, :],
+                                      src_lbl[0, :, :],
+                                      src_in_trg_labels[0, :, :])
 
             if (batch_num + 1) % args.print_every == 0:
                 logger.PrintAndLogData(saver, epoch, batch_num, args.print_every)
 
             if (batch_num + 1) % args.save_checkpoint == 0:
-                #todo: add save checkpoint functionallry to saver!
-                #todo: saver.SaveCheckpoint(epoch)
-                pass
+                saver.SaveModelsCheckpoint(semseg_net, discriminator, generator, epoch, batch_num)
 
-        #todo: Add validation loop!
+        #Validation:
+        semseg_net.eval()
+        rand_samp_inds = np.random.randint(0, len(target_eval_loader.dataset), 5)
+        rand_batchs = np.floor(rand_samp_inds/args.batch_size).astype(np.int)
+        cm = torch.zeros((NUM_CLASSES, NUM_CLASSES)).cuda()
+        for val_batch_num, (trg_eval_img, trg_eval_lbl, _, _) in enumerate(target_eval_loader):
+            with torch.no_grad():
+                trg_input_batch = Variable(trg_eval_img, requires_grad=False).cuda()
+                trg_label_batch = Variable(trg_eval_lbl, requires_grad=False).cuda()
+                pred_softs_batch = semseg_net(trg_input_batch)
+                pred_batch = torch.argmax(pred_softs_batch, dim=1)
+                cm += compute_cm_batch_torch(pred_batch, trg_label_batch, IGNORE_LABEL, NUM_CLASSES)
+                print('Validation: saw', val_batch_num*args.batch_size, 'examples')
+                if (val_batch_num + 1) in rand_batchs:
+                    rand_offset = np.random.randint(0, args.batch_size)
+                    saver.SaveValidationImages(epoch,
+                                               trg_input_batch[rand_offset,:,:,:],
+                                               trg_label_batch[rand_offset,:,:],
+                                               pred_batch[rand_offset,:,:])
+        iou, miou = compute_iou_torch(cm)
+        saver.SaveEpochAccuracy(iou, miou, epoch)
+        logger.info('Average accuracy of Epoch #%d on target domain: mIoU = %2f' % (epoch + 1, miou))
         logger.info('-----------------------------------Epoch #%d Finished-----------------------------------' % (epoch + 1))
-        saver.SaveLossHistory(logger.log_folder, epoch)
+        del cm, trg_input_batch, trg_label_batch, pred_softs_batch, pred_batch
 
     saver.tb.close()
     logger.info('Finished training.')

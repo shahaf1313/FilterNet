@@ -6,14 +6,12 @@ from PIL import Image
 from torch.utils import data
 
 class cityscapesDataSet(data.Dataset):
-    def __init__(self, root, list_path, crop_size=(11, 11), mean=(128, 128, 128), max_iters=None, set='val'):
+    def __init__(self, root, list_path, crop_size=(11, 11), mean=(128, 128, 128), set='val'):
         self.root = root
         self.list_path = list_path
         self.crop_size = crop_size
         self.mean = mean
         self.img_ids = [i_id.strip() for i_id in open(list_path)]
-        if not max_iters==None:
-            self.img_ids = self.img_ids * int( np.ceil(float(max_iters)/len(self.img_ids)) )
         self.files = []
         self.set = set
 
@@ -34,3 +32,5 @@ class cityscapesDataSet(data.Dataset):
         image = (image - 128.) / 128  # change from 0..255 to -1..1
         return image.copy(), np.array(size), name
 
+    def SetEpochSize(self, epoch_min_size):
+        self.img_ids = self.img_ids * int(np.ceil(float(epoch_min_size) / len(self.img_ids)))

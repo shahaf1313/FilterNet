@@ -1,4 +1,4 @@
-import unet
+from backbones import unet
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -718,6 +718,16 @@ class DeepLPFParameterPrediction(nn.Module):
         src_in_trg = torch.tanh(src_img + img_fuse)
         return src_in_trg
 
+#todo: complete code
+class FrequencyAdapterNet(nn.Module):
+    def __init__(self):
+        pass
+
+    def forward(self, src, trg):
+        a, b = None, None
+        torch.fft.fftn(a, dim=(1,2)) #2d fft to dims (1,2)
+        torch.fft.ifftn(b, dim=(1,2)) #2d ifft to dims (1,2)
+
 
 class DeepLPFNet(nn.Module):
 
@@ -799,10 +809,14 @@ class DiscriminatorLoss(nn.Module):
         super(DiscriminatorLoss, self).__init__()
 
     def forward(self, source_value, target_value):
-        assert source_value.shape == target_value.shape
-        assert len(source_value.shape) == 1
-        self.cache = source_value, target_value, target_value.shape[0]
-        return torch.mean(source_value**2 + (1-target_value)**2)
+        loss = None
+        if source_value is None and target_value is not None:
+            loss = torch.mean((1-target_value)**2)
+        elif source_value is not None and target_value is None:
+            loss = torch.mean(source_value**2)
+        elif source_value is not None and target_value is not None:
+            loss = torch.mean(source_value ** 2 + (1 - target_value) ** 2)
+        return loss
 
 class GeneratorLoss(nn.Module):
     def __init__(self):
@@ -810,7 +824,6 @@ class GeneratorLoss(nn.Module):
         Generator loss. Expects to predicated
         """
         super(GeneratorLoss, self).__init__()
-        self.mse_loss = torch.nn.MSELoss()
 
     def forward(self, loss_seg, loss_ent, entW, discriminator_target):
         return torch.mean(loss_seg + entW*loss_ent + (1-discriminator_target)**2)

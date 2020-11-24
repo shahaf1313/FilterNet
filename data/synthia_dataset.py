@@ -1,13 +1,12 @@
-import os
+from constants import IGNORE_LABEL
 import os.path as osp
 from PIL import Image
 import numpy as np
-import torch
 from torch.utils import data
 
 class SYNDataSet(data.Dataset):
 
-    def __init__(self, root, list_path, crop_size=(11, 11), resize=(11, 11), ignore_label=255, mean=(128, 128, 128), max_iters=None):
+    def __init__(self, root, list_path, crop_size=(11, 11), resize=(11, 11), ignore_label=IGNORE_LABEL, mean=(128, 128, 128)):
         self.root = root
         self.list_path = list_path
         self.crop_size = crop_size
@@ -15,11 +14,7 @@ class SYNDataSet(data.Dataset):
         self.ignore_label = ignore_label
         self.mean = mean
         self.img_ids = [i_id.strip()[4:] for i_id in open(list_path)]
-        if not max_iters==None:
-            self.img_ids = self.img_ids * int(np.ceil(float(max_iters) / len(self.img_ids)))
-
         self.files = []
-
         self.id_to_trainid = {3: 0, 4: 1, 2: 2, 21: 3, 5: 4, 7: 5,
                               15: 6, 9: 7, 6: 8, 16: 9, 1: 10, 10: 11, 17: 12,
                               8: 13, 18: 14, 19: 15, 20: 16, 12: 17, 11: 18}
@@ -60,3 +55,5 @@ class SYNDataSet(data.Dataset):
 
         return image.copy(), label_copy.copy(), np.array(size), name
 
+    def SetEpochSize(self, epoch_min_size):
+        self.img_ids = self.img_ids * int(np.ceil(float(epoch_min_size) / len(self.img_ids)))

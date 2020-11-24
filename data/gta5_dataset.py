@@ -2,10 +2,11 @@ import os.path as osp
 from PIL import Image
 import numpy as np
 from torch.utils import data
+from constants import IGNORE_LABEL
 
 class GTA5DataSet(data.Dataset):
 
-    def __init__(self, root, list_path, crop_size=(11, 11), resize=(11, 11), ignore_label=255, mean=(128, 128, 128), max_iters=None):
+    def __init__(self, root, list_path, crop_size=(11, 11), resize=(11, 11), ignore_label=IGNORE_LABEL, mean=(128, 128, 128)):
         self.root = root  # folder for GTA5 which contains subfolder images, labels
         self.list_path = list_path   # list of image names
         self.crop_size = crop_size   # dst size for resize
@@ -13,9 +14,6 @@ class GTA5DataSet(data.Dataset):
         self.ignore_label = ignore_label
         self.mean = mean
         self.img_ids = [i_id.strip() for i_id in open(list_path)]
-        if not max_iters==None:
-            self.img_ids = self.img_ids * int(  np.ceil(float(max_iters)/len(self.img_ids))  )
-
         self.files = []
 
         self.id_to_trainid = {7: 0, 8: 1, 11: 2, 12: 3, 13: 4, 17: 5,
@@ -52,9 +50,11 @@ class GTA5DataSet(data.Dataset):
             label_copy[label == k] = v
 
         size = image.shape
-        # image = image[:, :, ::-1]  # change to BGR
         image -= self.mean
         image = image.transpose((2, 0, 1))
         image = (image - 128.) / 128  # change from 0..255 to -1..1
         return image.copy(), label_copy.copy(), np.array(size), name
+
+    def SetEpochSize(self, epoch_min_size):
+        self.img_ids = self.img_ids * int(np.ceil(float(epoch_min_size) / len(self.img_ids)))
 

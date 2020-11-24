@@ -1,42 +1,9 @@
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
+from constants import IGNORE_LABEL, NUM_CLASSES
 affine_par = True
-#
-# def conv3x3( in_planes, out_planes, stride=1 ):
-#     "3x3 convolution with padding"
-#     return nn.Conv2d( in_planes, out_planes, kernel_size=3, stride=stride,
-#                       padding=1, bias=False )
-#
-# class BasicBlock(nn.Module):
-#     expansion = 1
-#     def __init__(self, inplanes, planes, stride=1, downsample=None):
-#         super(BasicBlock, self).__init__()
-#         self.conv1 = conv3x3(inplanes, planes, stride)
-#         self.bn1 = nn.BatchNorm2d(planes, affine=affine_par)
-#         self.relu = nn.ReLU(inplace=True)
-#         self.conv2 = conv3x3(planes, planes)
-#         self.bn2 = nn.BatchNorm2d(planes, affine=affine_par)
-#         self.downsample = downsample
-#         self.stride = stride
-#
-#     def forward(self, x):
-#         residual = x
-#
-#         out = self.conv1(x)
-#         out = self.bn1(out)
-#         out = self.relu(out)
-#
-#         out = self.conv2(out)
-#         out = self.bn2(out)
-#
-#         if self.downsample is not None:
-#             residual = self.downsample(x)
-#
-#         out += residual
-#         out = self.relu(out)
-#
-#         return out
+
 
 class Bottleneck(nn.Module):
     expansion = 4
@@ -129,8 +96,6 @@ class ResNet101(nn.Module):
             elif isinstance(m, nn.BatchNorm2d):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
-                #        for i in m.parameters():
-                #            i.requires_grad = False
 
     def _make_layer(self, block, planes, blocks, stride=1, dilation=1):
         downsample = None
@@ -163,7 +128,7 @@ class ResNet101(nn.Module):
         x = self.layer4(x)
         x = self.layer5(x)
 
-        if self.phase == 'train':
+        if self.training:
             P = F.softmax(x, dim=1)        # [B, 19, H, W]
             logP = F.log_softmax(x, dim=1) # [B, 19, H, W]
             PlogP = P * logP               # [B, 19, H, W]
@@ -178,7 +143,7 @@ class ResNet101(nn.Module):
             if lbl is not None:
                 self.loss_seg = self.CrossEntropy2d(x, lbl, weight=weight)
             return x, self.loss_seg, self.loss_ent
-
+        x = nn.functional.interpolate(x, size=(h, w), mode='bilinear', align_corners=True)
         return x
 
     def get_1x_lr_params_NOscale(self):
@@ -228,7 +193,7 @@ class ResNet101(nn.Module):
         assert predict.size(3) == target.size(2), "{0} vs {1} ".format(predict.size(3), target.size(3))
 
         n, c, h, w = predict.size()
-        target_mask = (target >= 0) * (target != 255)
+        target_mask = (target >= 0) * (target != IGNORE_LABEL)
         target = target[target_mask]
         if not target.data.dim():
             return Variable(torch.zeros(1))
@@ -239,19 +204,7 @@ class ResNet101(nn.Module):
 
         return loss    
 
-def Deeplab(num_classes=21, init_weights=None, restore_from=None, phase='train'):
+def Deeplab(num_classes=NUM_CLASSES, phase='train'):
     model = ResNet101(Bottleneck, [3, 4, 23, 3], num_classes, phase)
-    if init_weights is not None:
-        saved_state_dict = torch.load(init_weights, map_location=lambda storage, loc: storage)
-        new_params = model.state_dict().copy()
-        for i in saved_state_dict:
-            i_parts = i.split('.')
-            if not num_classes == 19 or not i_parts[1] == 'layer5':
-                new_params['.'.join(i_parts[1:])] = saved_state_dict[i]
-                #new_params[i] = saved_state_dict[i]
-        model.load_state_dict(new_params)
-    if restore_from is not None: 
-        model.load_state_dict(torch.load(restore_from + '.pth', map_location=lambda storage, loc: storage))        
-    
     return model
 
