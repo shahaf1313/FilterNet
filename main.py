@@ -13,15 +13,13 @@ from torch import nn
 import torch
 import numpy as np
 import time
-from torch.utils.tensorboard import SummaryWriter
-# torch.manual_seed(0)
-# torch.cuda.manual_seed(0)
-# torch.backends.cudnn.enabled = True
-# torch.backends.cudnn.benchmark =False
-# torch.backends.cudnn.enabled = False
-# torch.backends.cudnn.deterministic = True
-# np.random.RandomState(0)
-# np.random.seed(0)
+torch.manual_seed(0)
+torch.cuda.manual_seed(0)
+np.random.RandomState(0)
+np.random.seed(0)
+torch.set_deterministic(True)
+torch.backends.cudnn.deterministic = True
+
 
 def main():
     args = arg_parser.Parse()
@@ -29,7 +27,7 @@ def main():
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus
     logger = Logger(args.log_dir)
     logger.PrintAndLogArgs(args)
-    saver = ImageAndLossSaver(SummaryWriter(), logger.log_folder, args.checkpoints_dir, args.save_pics_every)
+    saver = ImageAndLossSaver(args.tb_logs_dir, logger.log_folder, args.checkpoints_dir, args.save_pics_every)
     source_loader, target_train_loader, target_eval_loader = CreateSrcDataLoader(args), CreateTrgDataLoader(args, 'train'), CreateTrgDataLoader(args, 'val')
     epoch_size = np.maximum(len(target_train_loader.dataset), len(source_loader.dataset))
     steps_per_epoch = int(np.floor(epoch_size / args.batch_size))
@@ -68,11 +66,8 @@ def main():
         logger.info('#################[Epoch %d]#################' % (epoch + 1))
 
         for batch_num in range(steps_per_epoch):
-            if batch_num > 10:
-                break
             start_time = time.time()
             training_discriminator = (batch_num >= args.generator_boost) and (batch_num-args.generator_boost) % (args.discriminator_iters + args.generator_iters) < args.discriminator_iters
-            #todo: should I substract the mean image?? from source? from data?? -> try and find out!
             src_img, src_lbl, src_shapes, src_names = source_loader_iter.next()  # new batch source
             trg_eval_img, trg_eval_lbl, trg_shapes, trg_names = target_train_loader_iter.next()  # new batch target
 
@@ -101,7 +96,7 @@ def main():
                 src_in_trg_labels = torch.argmax(predicted, dim=1)
                 loss = generator_criterion(loss_seg, loss_ent, args.entW, discriminator_trg)
 
-            saver.WriteLossHistory(training_discriminator, epoch, loss.item())
+            saver.WriteLossHistory(training_discriminator, loss.item())
             loss.backward()
 
             if training_discriminator: # train discriminator
@@ -114,7 +109,6 @@ def main():
 
             if (not training_discriminator) and saver.SaveImagesIteration:
                 saver.SaveTrainImages(epoch,
-                                      batch_num,
                                       src_img[0, :, :, :],
                                       src_in_trg[0, :, :, :],
                                       src_lbl[0, :, :],

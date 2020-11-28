@@ -5,15 +5,22 @@ from data.cityscapes_dataset import cityscapesDataSet
 from data.cityscapes_dataset_label import cityscapesDataSetLabel
 from data.synthia_dataset import SYNDataSet
 
-def CreateSrcDataLoader(args):
-    if args.source == 'gta5':
-        source_dataset = GTA5DataSet( args.data_dir, args.data_list, crop_size=image_sizes['cityscapes'], 
+def CreateSrcDataLoader(args, mode=None):
+    if args.source == 'gta5' and mode == 'train_semseg':
+        source_dataset = GTA5DataSet( args.data_dir, './dataset/gta5_list/train_semseg_net.txt', crop_size=image_sizes['cityscapes'],
                                       resize=image_sizes['gta5'] ,mean=IMG_MEAN )
+    elif args.source == 'gta5' and mode == 'val_semseg':
+        source_dataset = GTA5DataSet(args.data_dir, './dataset/gta5_list/val_semseg_net.txt', crop_size=image_sizes['cityscapes'],
+                                     resize=image_sizes['gta5'], mean=IMG_MEAN)
+    elif args.source == 'gta5' and mode is None:
+        source_dataset = GTA5DataSet(args.data_dir, args.data_list, crop_size=image_sizes['cityscapes'],
+                                     resize=image_sizes['gta5'], mean=IMG_MEAN)
     elif args.source == 'synthia':
         source_dataset = SYNDataSet( args.data_dir, args.data_list, crop_size=image_sizes['cityscapes'],
                                       resize=image_sizes['synthia'] ,mean=IMG_MEAN )
     else:
         raise ValueError('The source dataset mush be either gta5 or synthia')
+
     
     source_dataloader = data.DataLoader( source_dataset, 
                                          batch_size=args.batch_size,

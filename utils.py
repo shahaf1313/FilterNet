@@ -5,62 +5,83 @@ import os.path
 import numpy as np
 from constants import palette, trainId2label, NUM_CLASSES
 from torch.utils.tensorboard import SummaryWriter
+import datetime
 
 
 class ImageAndLossSaver():
-    def __init__(self, tb: SummaryWriter, loss_history_dir, checkpoint_dir, save_pics_every):
-        self.tb = tb
+    def __init__(self, tb_logs_dir, loss_history_dir, checkpoint_dir, save_pics_every):
+        tb_folder = os.path.join(tb_logs_dir, datetime.datetime.now().strftime('%d-%m-%Y_%H:%M:%S'))
+        os.mkdir(tb_folder)
+        self.tb = SummaryWriter(log_dir=tb_folder)
         self.loss_history_dir = loss_history_dir
         self.save_pics_every = save_pics_every
         self.checkpoint_dir = checkpoint_dir
         self.discriminator_total_steps = 0
         self.generator_total_steps = 0
+        self.semseg_total_steps = 0
         self.Reset()
 
     def Reset(self):
         self.generator_loss_history = []
         self.discriminator_loss_history = []
-        self.saved_images_counter = 0
+        self.saved_images_train_counter = 0
+        self.saved_images_val_counter = 0
         self.running_loss_discriminator = 0.0
         self.running_loss_generator = 0.0
         self.running_time = 0.0
 
-    def WriteLossHistory(self, discriminator, epoch, loss):
+    def WriteLossHistory(self, discriminator, loss):
         if discriminator:
             self.running_loss_discriminator += loss
             self.discriminator_total_steps += 1
             self.discriminator_loss_history.append(loss)
-            # self.tb.add_scalar('Discriminator Loss Epoch %d' % (epoch + 1), loss, len(self.discriminator_loss_history))
             self.tb.add_scalar('Discriminator Loss Full History', loss, self.discriminator_total_steps)
         else:
             self.running_loss_generator += loss
             self.generator_total_steps += 1
             self.generator_loss_history.append(loss)
-            # self.tb.add_scalar('Generator Loss Epoch %d' % (epoch + 1), loss, len(self.generator_loss_history))
             self.tb.add_scalar('Generator Loss Full History', loss, self.generator_total_steps)
+
+    def WriteSemsegLossHistory(self, network_type, loss):
+        self.semseg_total_steps += 1
+        self.tb.add_scalar('%s Loss Full History' % (network_type), loss, self.semseg_total_steps)
 
     @property
     def SaveImagesIteration(self):
         return len(self.generator_loss_history) % self.save_pics_every == 0
+
+    @property
+    def SaveImagesSemsegIteration(self):
+        return self.semseg_total_steps % self.save_pics_every == 0
 
     def SaveTrainImages(self, epoch, src_img, src_in_trg, src_lbl, src_in_trg_label):
         src_img = (src_img+1.)/2.
         src_in_trg = (src_in_trg+1.)/2.
         rgb_src_lbl = np.array(colorize_mask(src_lbl.cpu().numpy()).convert('RGB')).transpose((2,0,1))
         rgb_src_in_trg_label = np.array(colorize_mask(src_in_trg_label.detach().cpu().numpy()).convert('RGB')).transpose((2,0,1))
-        self.tb.add_image('TrainEpoch%dSnapshot%d/SourceImage' % (epoch+1, self.saved_images_counter+1), src_img)
-        self.tb.add_image('TrainEpoch%ddSnapshot%d/SourceInTargetImage' % (epoch+1, self.saved_images_counter+1), src_in_trg)
-        self.tb.add_image('TrainEpoch%ddSnapshot%d/SourceLabel' % (epoch+1, self.saved_images_counter+1), rgb_src_lbl)
-        self.tb.add_image('TrainEpoch%ddSnapshot%d/SourceInTargetLabel' % (epoch+1, self.saved_images_counter+1), rgb_src_in_trg_label)
-        self.saved_images_counter += 1
+        self.tb.add_image('TrainEpoch%dSnapshot%d/SourceImage' % (epoch + 1, self.saved_images_train_counter + 1), src_img)
+        self.tb.add_image('TrainEpoch%dSnapshot%d/SourceInTargetImage' % (epoch + 1, self.saved_images_train_counter + 1), src_in_trg)
+        self.tb.add_image('TrainEpoch%dSnapshot%d/SourceLabel' % (epoch + 1, self.saved_images_train_counter + 1), rgb_src_lbl)
+        self.tb.add_image('TrainEpoch%dSnapshot%d/SourceInTargetLabel' % (epoch + 1, self.saved_images_train_counter + 1), rgb_src_in_trg_label)
+        self.saved_images_train_counter += 1
 
     def SaveValidationImages(self, epoch, trg_img, trg_lbl, pred_label):
         trg_img = (trg_img + 1.) / 2.
         rgb_trg_lbl = np.array(colorize_mask(trg_lbl.cpu().numpy()).convert('RGB')).transpose((2, 0, 1))
         rgb_pred_label = np.array(colorize_mask(pred_label.cpu().numpy()).convert('RGB')).transpose((2, 0, 1))
-        self.tb.add_image('ValidationEpoch%d/TargetImage' % (epoch+1), trg_img)
-        self.tb.add_image('ValidationEpoch%d/TargetTrueLabel' % (epoch+1), rgb_trg_lbl)
-        self.tb.add_image('ValidationEpoch%d/TargetPredictedLabel' % (epoch+1), rgb_pred_label)
+        self.tb.add_image('ValidationEpoch%d/Sanpshot%d/TargetImage' % (epoch+1, self.saved_images_val_counter+1), trg_img)
+        self.tb.add_image('ValidationEpoch%d/Sanpshot%d/TargetTrueLabel' % (epoch+1, self.saved_images_val_counter+1), rgb_trg_lbl)
+        self.tb.add_image('ValidationEpoch%d/Sanpshot%d/TargetPredictedLabel' % (epoch+1, self.saved_images_val_counter+1), rgb_pred_label)
+        self.saved_images_val_counter += 1
+
+    def SaveTrainSemegImages(self, epoch, src_img, src_lbl, pred_label):
+        src_img = (src_img + 1.) / 2.
+        rgb_src_lbl = np.array(colorize_mask(src_lbl.cpu().numpy()).convert('RGB')).transpose((2, 0, 1))
+        rgb_pred_label = np.array(colorize_mask(pred_label.detach().cpu().numpy()).convert('RGB')).transpose((2, 0, 1))
+        self.tb.add_image('TrainSemsegEpoch%dSnapshot%d/SourceImage' % (epoch + 1, self.saved_images_train_counter + 1), src_img)
+        self.tb.add_image('TrainSemsegEpoch%dSnapshot%d/SourceLabel' % (epoch + 1, self.saved_images_train_counter + 1), rgb_src_lbl)
+        self.tb.add_image('TrainSemsegEpoch%dSnapshot%d/PredictionLabel' % (epoch + 1, self.saved_images_train_counter + 1), rgb_pred_label)
+        self.saved_images_train_counter += 1
 
     def SaveEpochAccuracy(self, iou, miou, epoch):
         for i in range(NUM_CLASSES):
@@ -74,6 +95,11 @@ class ImageAndLossSaver():
         torch.save(semseg_net.state_dict(), semseg_path)
         torch.save(discriminator_net.state_dict(), discriminator_path)
         torch.save(generator_net.state_dict(), generator_path)
+
+    def SaveModelsCheckpointSemseg(self, semseg_net, semseg_type, epoch):
+        semseg_type = semseg_type.lower()
+        semseg_path = os.path.join(self.checkpoint_dir, '%s_epoch_%d.pth' % (semseg_type, epoch + 1))
+        torch.save(semseg_net.module.state_dict(), semseg_path)
 
 
 def colorize_mask(mask):
