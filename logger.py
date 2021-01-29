@@ -5,8 +5,8 @@ import arg_parser
 
 class Logger:
     def __init__(self, log_dir):
-        creation_time = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        log_folder = log_dir + '/log_' + creation_time
+        creation_time = datetime.datetime.now().strftime('%d-%m-%Y_%H:%M:%S')
+        log_folder = os.path.join(log_dir, 'log_%s'%(creation_time))
         os.mkdir(log_folder)
         logger = logging.getLogger('FilterNet Logger')
         logger.setLevel(logging.INFO)
@@ -41,6 +41,7 @@ class Logger:
         self.logger.info('[ep %d][it %d][loss discriminator %.8f][loss generator %.8f][time per batch %.2fs]' % \
                     (epoch + 1, batch_num + 1, print_discriminator_loss, print_generator_loss, print_time))
         saver.running_loss_discriminator, saver.running_loss_generator, saver.running_time = 0.0, 0.0, 0.0
+
 
     def info(self, m):
         self.logger.info(m)
